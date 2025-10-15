@@ -1,0 +1,77 @@
+# PowerShell specific
+*.ps1xml
+*.nuspec
+
+# User-specific files
+config.psd1
+*.user
+*.suo
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+
+# Test results
+TestResults/
+testResults.xml
+*.trx
+coverage.xml
+*.coverage
+
+# Logs
+Logs/
+*.log
+
+# Module specific
+*.zip
+*.nupkg
+
+# Sensitive information
+*.secret
+*.key
+*.credentials
+.env
+
+# IDE specific
+.vscode/
+.vs/
+.idea/
+*.swp
+*.swo
+*~
+
+# Mac specific
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows specific
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+~$*
+
+# Documentation builds
+_site/
+.sass-cache/
+.jekyll-cache/
+.jekyll-metadata
+
+# Package managers
+node_modules/
+packages/
+
+# Custom config files (example should be tracked)
+config.psd1
