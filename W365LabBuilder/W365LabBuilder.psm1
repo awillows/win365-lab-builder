@@ -66,6 +66,7 @@ $Script:LabDefaults = @{
     - User.ReadWrite.All
     - Group.ReadWrite.All
     - Directory.ReadWrite.All
+    - RoleManagement.ReadWrite.Directory
     - DeviceManagementConfiguration.ReadWrite.All
     - DeviceManagementManagedDevices.ReadWrite.All
 
@@ -107,6 +108,7 @@ function Connect-LabGraph {
             "User.ReadWrite.All",
             "Group.ReadWrite.All",
             "Directory.ReadWrite.All",
+            "RoleManagement.ReadWrite.Directory",
             "DeviceManagementConfiguration.ReadWrite.All",
             "DeviceManagementManagedDevices.ReadWrite.All"
         ),
@@ -754,6 +756,7 @@ function Get-LabUser {
 
 .DESCRIPTION
     Creates security groups for lab environments with consistent naming and settings.
+    Optionally, can create role-assignable groups for Entra ID role assignments.
 
 .PARAMETER GroupName
     Name of the group to create.
@@ -764,11 +767,25 @@ function Get-LabUser {
 .PARAMETER MailNickname
     Mail nickname for the group. If not specified, derived from group name.
 
+.PARAMETER IsAssignableToRole
+    Creates a role-assignable group that can be assigned Entra ID (Azure AD) roles.
+    This property cannot be changed after group creation.
+    Requires Azure AD Premium P1 or P2 license.
+    Limited to 500 role-assignable groups per tenant.
+
 .EXAMPLE
     New-LabGroup -GroupName "Lab Group for user001"
 
+.EXAMPLE
+    New-LabGroup -GroupName "IT Administrators" -IsAssignableToRole
+    Creates a role-assignable group for Entra ID role assignments.
+
 .OUTPUTS
     Microsoft Graph group object.
+
+.NOTES
+    IsAssignableToRole cannot be changed after group creation.
+    Role-assignable groups require Azure AD Premium P1 or P2.
 #>
 function New-LabGroup {
     [CmdletBinding(SupportsShouldProcess)]
@@ -782,7 +799,10 @@ function New-LabGroup {
         [string]$Description = "Lab group created by Windows 365 Lab Builder",
         
         [Parameter(Mandatory = $false)]
-        [string]$MailNickname
+        [string]$MailNickname,
+        
+        [Parameter(Mandatory = $false)]
+        [switch]$IsAssignableToRole
     )
     
     begin {
@@ -813,6 +833,12 @@ function New-LabGroup {
                     MailNickname = $MailNickname
                     SecurityEnabled = $true
                     ErrorAction = 'Stop'
+                }
+                
+                # Add IsAssignableToRole if specified
+                if ($IsAssignableToRole) {
+                    $groupParams.IsAssignableToRole = $true
+                    Write-Verbose "Creating role-assignable group (requires Azure AD Premium P1 or P2)"
                 }
                 
                 $newGroup = New-MgGroup @groupParams
@@ -1020,6 +1046,163 @@ function Add-LabUserToGroup {
         }
         catch {
             Write-Error "Failed to add user to group: $($_.Exception.Message)"
+            throw
+        }
+    }
+}
+
+<#
+.SYNOPSIS
+    Assigns an Entra ID (Azure AD) directory role to a role-assignable group.
+
+.DESCRIPTION
+    Adds a group to a directory role in Entra ID (Azure AD). The group must be created
+    with the IsAssignableToRole property set to true. This function automatically activates
+    directory roles if they are not already active, and checks for duplicate assignments.
+
+.PARAMETER GroupId
+    ID of the role-assignable group to add to the role.
+
+.PARAMETER GroupName
+    Name of the role-assignable group to add to the role (alternative to GroupId).
+
+.PARAMETER RoleName
+    Display name of the directory role to assign (e.g., "User Administrator", "Groups Administrator").
+
+.PARAMETER RoleId
+    ID of the directory role to assign (alternative to RoleName).
+
+.EXAMPLE
+    Add-LabGroupToRole -GroupName "IT Administrators" -RoleName "User Administrator"
+    Assigns the User Administrator role to the IT Administrators group.
+
+.EXAMPLE
+    Add-LabGroupToRole -GroupId "group-id" -RoleName "Groups Administrator"
+    Assigns the Groups Administrator role to a group by ID.
+
+.EXAMPLE
+    Add-LabGroupToRole -GroupName "Helpdesk Team" -RoleName "Helpdesk Administrator"
+    Assigns the Helpdesk Administrator role to the Helpdesk Team group.
+
+.NOTES
+    Requires the following permissions:
+    - RoleManagement.ReadWrite.Directory
+    - Group.Read.All or Group.ReadWrite.All
+    
+    Requires Privileged Role Administrator or Global Administrator role.
+    
+    The group must be created with IsAssignableToRole = $true.
+    This property cannot be changed after group creation.
+    
+    Common directory roles:
+    - User Administrator
+    - Groups Administrator
+    - Helpdesk Administrator
+    - Password Administrator
+    - License Administrator
+    - Authentication Administrator
+    - Security Reader
+    - Compliance Administrator
+#>
+function Add-LabGroupToRole {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory = $true, ParameterSetName = 'ByGroupIdAndRoleName')]
+        [Parameter(Mandatory = $true, ParameterSetName = 'ByGroupIdAndRoleId')]
+        [ValidateNotNullOrEmpty()]
+        [string]$GroupId,
+        
+        [Parameter(Mandatory = $true, ParameterSetName = 'ByGroupNameAndRoleName')]
+        [Parameter(Mandatory = $true, ParameterSetName = 'ByGroupNameAndRoleId')]
+        [ValidateNotNullOrEmpty()]
+        [string]$GroupName,
+        
+        [Parameter(Mandatory = $true, ParameterSetName = 'ByGroupIdAndRoleName')]
+        [Parameter(Mandatory = $true, ParameterSetName = 'ByGroupNameAndRoleName')]
+        [ValidateNotNullOrEmpty()]
+        [string]$RoleName,
+        
+        [Parameter(Mandatory = $true, ParameterSetName = 'ByGroupIdAndRoleId')]
+        [Parameter(Mandatory = $true, ParameterSetName = 'ByGroupNameAndRoleId')]
+        [ValidateNotNullOrEmpty()]
+        [string]$RoleId
+    )
+    
+    begin {
+        if (-not (Test-LabGraphConnection)) {
+            throw "Microsoft Graph connection required. Use Connect-LabGraph first."
+        }
+    }
+    
+    process {
+        try {
+            # Get group
+            if ($PSCmdlet.ParameterSetName -like '*ByGroupName*') {
+                Write-Verbose "Looking up group: $GroupName"
+                $group = Get-MgGroup -Filter "displayName eq '$GroupName'" -Property "Id,DisplayName,IsAssignableToRole" -ErrorAction Stop
+                if (-not $group) {
+                    throw "Group '$GroupName' not found"
+                }
+                $GroupId = $group.Id
+            }
+            else {
+                Write-Verbose "Looking up group by ID: $GroupId"
+                $group = Get-MgGroup -GroupId $GroupId -Property "Id,DisplayName,IsAssignableToRole" -ErrorAction Stop
+            }
+            
+            # Verify group is role-assignable
+            if (-not $group.IsAssignableToRole) {
+                throw "Group '$($group.DisplayName)' is not role-assignable. Create the group with -IsAssignableToRole parameter."
+            }
+            
+            # Get directory role
+            if ($PSCmdlet.ParameterSetName -like '*RoleName*') {
+                Write-Verbose "Looking up directory role: $RoleName"
+                
+                # First check if role is already activated
+                $directoryRole = Get-MgDirectoryRole -Filter "displayName eq '$RoleName'" -ErrorAction SilentlyContinue
+                
+                if (-not $directoryRole) {
+                    Write-Verbose "Role not activated yet. Looking up role template..."
+                    # Get the role template
+                    $roleTemplate = Get-MgDirectoryRoleTemplate -All | Where-Object { $_.DisplayName -eq $RoleName }
+                    
+                    if (-not $roleTemplate) {
+                        throw "Directory role '$RoleName' not found. Check the role name spelling."
+                    }
+                    
+                    # Activate the role
+                    Write-Information "Activating directory role: $RoleName" -InformationAction Continue
+                    $directoryRole = New-MgDirectoryRole -RoleTemplateId $roleTemplate.Id -ErrorAction Stop
+                }
+                
+                $RoleId = $directoryRole.Id
+            }
+            else {
+                Write-Verbose "Looking up directory role by ID: $RoleId"
+                $directoryRole = Get-MgDirectoryRole -DirectoryRoleId $RoleId -ErrorAction Stop
+            }
+            
+            # Check if group is already assigned to this role
+            $existingMembers = Get-MgDirectoryRoleMember -DirectoryRoleId $RoleId -All -ErrorAction Stop
+            if ($existingMembers.Id -contains $GroupId) {
+                Write-Warning "Group '$($group.DisplayName)' is already assigned to role '$($directoryRole.DisplayName)'"
+                return
+            }
+            
+            if ($PSCmdlet.ShouldProcess("$($group.DisplayName) to $($directoryRole.DisplayName)", "Add Group to Directory Role")) {
+                # Add group to role
+                $params = @{
+                    "@odata.id" = "https://graph.microsoft.com/v1.0/directoryObjects/$GroupId"
+                }
+                
+                New-MgDirectoryRoleMemberByRef -DirectoryRoleId $RoleId -BodyParameter $params -ErrorAction Stop
+                
+                Write-Information "Successfully assigned role '$($directoryRole.DisplayName)' to group '$($group.DisplayName)'" -InformationAction Continue
+            }
+        }
+        catch {
+            Write-Error "Failed to assign role to group: $($_.Exception.Message)"
             throw
         }
     }
@@ -2983,6 +3166,7 @@ Export-ModuleMember -Function @(
     'Remove-LabGroup',
     'Get-LabGroup',
     'Add-LabUserToGroup',
+    'Add-LabGroupToRole',
     'Remove-LabUserFromGroup',
     'Set-LabGroupLicense',
     'Remove-LabGroupLicense',

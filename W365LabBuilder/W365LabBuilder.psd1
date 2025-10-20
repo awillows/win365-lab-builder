@@ -80,6 +80,7 @@ FunctionsToExport = @(
     'Remove-LabGroup',
     'Get-LabGroup',
     'Add-LabUserToGroup',
+    'Add-LabGroupToRole',
     'Remove-LabUserFromGroup',
     'Set-LabGroupLicense',
     'Remove-LabGroupLicense',
