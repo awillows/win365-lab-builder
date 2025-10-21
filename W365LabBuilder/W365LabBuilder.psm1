@@ -786,6 +786,7 @@ function Get-LabUser {
 .NOTES
     IsAssignableToRole cannot be changed after group creation.
     Role-assignable groups require Azure AD Premium P1 or P2.
+    Use Add-LabGroupToRole to assign Entra ID directory roles to role-assignable groups.
 #>
 function New-LabGroup {
     [CmdletBinding(SupportsShouldProcess)]

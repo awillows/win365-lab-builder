@@ -39,6 +39,8 @@ The **Windows 365 Lab Builder** is an enterprise-grade PowerShell module designe
 
 ### Group Management
 - **Security Groups**: Automated creation of lab groups
+- **Role-Assignable Groups**: Create groups for Entra ID role assignments
+- **Directory Role Assignment**: Assign administrative roles to groups
 - **License Management**: Group-based license assignment
 - **Membership Control**: Easy user-to-group assignments
 - **Individual or Shared Groups**: Flexible group assignment strategies
@@ -70,8 +72,10 @@ Before using the Windows 365 Lab Builder, ensure you have:
 
 3. **Appropriate Permissions**:
    - Microsoft Graph permissions for user and group management
+   - `RoleManagement.ReadWrite.Directory` scope for role-assignable groups
    - Windows 365 Administrator role or equivalent
    - License assignment permissions
+   - For role-assignable groups: Azure AD Premium P1 or P2 license required
 
 4. **Windows 365 Licenses**:
    - Available Windows 365 licenses in your tenant
@@ -141,10 +145,11 @@ The Windows 365 Lab Builder includes 30 functions organized into logical categor
 - `Get-LabUser` - Retrieve user information
 
 ### Group Management Functions
-- `New-LabGroup` - Create security groups
+- `New-LabGroup` - Create security groups (including role-assignable groups)
 - `Remove-LabGroup` - Remove groups
 - `Get-LabGroup` - Retrieve group information
 - `Add-LabUserToGroup` - Add users to groups
+- `Add-LabGroupToRole` - Assign Entra ID directory roles to groups
 - `Remove-LabUserFromGroup` - Remove users from groups
 - `Set-LabGroupLicense` - Assign licenses to groups
 - `Remove-LabGroupLicense` - Remove group licenses
@@ -209,6 +214,25 @@ Set-LabGroupLicense -GroupName "Lab Group 1" -SkuPartNumber "ENTERPRISEPACK"
 
 # Check group license status
 Get-LabGroupLicense -GroupName "Lab Group 1"
+```
+
+### Role-Assignable Groups and Directory Roles
+```powershell
+# Create a role-assignable group (requires Azure AD Premium P1/P2)
+$adminGroup = New-LabGroup -GroupName "IT Administrators" -IsAssignableToRole
+
+# Assign an Entra ID directory role to the group
+Add-LabGroupToRole -GroupName "IT Administrators" -RoleName "User Administrator"
+
+# Add users to the role-assignable group
+Add-LabUserToGroup -UserPrincipalName "admin001@contoso.com" -GroupName "IT Administrators"
+
+# Create multiple role-assignable groups with different roles
+$helpdesk = New-LabGroup -GroupName "Helpdesk Team" -IsAssignableToRole
+Add-LabGroupToRole -GroupName "Helpdesk Team" -RoleName "Helpdesk Administrator"
+
+$security = New-LabGroup -GroupName "Security Team" -IsAssignableToRole
+Add-LabGroupToRole -GroupName "Security Team" -RoleName "Security Reader"
 ```
 
 ## ⚙️ Configuration
